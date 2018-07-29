@@ -4,9 +4,15 @@ MQTT based Smart Meter for Home Assistant by Steven (2018)
 
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
+// OTA includes
+#include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+// DSMR lib include
 #include <dsmr.h>
 
-#define DEBUG
+//#define DEBUG
 
 void sendMQTTMessage(String topic, String message);
 
@@ -99,9 +105,9 @@ using MyData = ParsedData<
 //};
 
 // Update these with values suitable for your network.
-const char* ssid = "De Jong Airport";
-const char* password = "Appeltaart";
-const char* mqtt_server = "raspi";
+const char* ssid = "SSID";
+const char* password = "Password";
+const char* mqtt_server = "mqtt-server";
 const char* mqtt_debug_topic = "debug/smartmeter/debug";
 const char* mqtt_topic_prefix = "home/smartmeter/";
 
@@ -119,7 +125,7 @@ struct Printer {
   }
 };
 
-P1Reader reader(&Serial, 2); //RTS connected to D2?
+P1Reader reader(&Serial, 4); //RTS connected to GPIO4?
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -152,6 +158,37 @@ void setup_wifi() {
   Serial1.println("WiFi connected");
   Serial1.println("IP address: ");
   Serial1.println(WiFi.localIP());
+
+  // Port defaults to 8266
+  // ArduinoOTA.setPort(8266);
+
+  // Hostname defaults to esp8266-[ChipID]
+   ArduinoOTA.setHostname("smart_meter_esp8266");
+
+  // No authentication by default
+  // ArduinoOTA.setPassword((const char *)"123");
+
+  ArduinoOTA.onStart([]() {
+    Serial.println("Start");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+  ArduinoOTA.begin();
+  Serial.println("Ready");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
 }
 
 void callback(char* topic, byte* payload, unsigned int length) 
@@ -175,7 +212,7 @@ void reconnect() {
   //please change following line to    if (client.connect(clientId,userName,passWord))
   if (client.connect(clientId.c_str()))
   {
-    Serial1.println("connected");
+    print_to_mqtt("connected");
    //once connected to MQTT broker, subscribe command if any
     //client.subscribe(mqtt_ring_sub);
   } else {
@@ -222,18 +259,22 @@ void loop() {
   }
   client.loop();
   reader.loop();
+  ArduinoOTA.handle();
 
   // Every minute, fire off a one-off reading
   unsigned long now = millis();
   if (now - last > 60000) {
     reader.enable(true);
     last = now;
+    print_to_mqtt("fire off reading");
   }
 
   if (reader.available()) {
     MyData data;
     String err;
+    print_to_mqtt("reader available");
     if (reader.parse(&data, &err)) {
+      print_to_mqtt("parse successful");
       // Parse succesful, print result
       data.applyEach(Printer());
     } else {
