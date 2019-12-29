@@ -1,7 +1,7 @@
 /*
 MQTT based Smart Meter for Home Assistant by Steven (2018)
 */
-
+#include <ssidinfo.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 // OTA includes
@@ -12,7 +12,7 @@ MQTT based Smart Meter for Home Assistant by Steven (2018)
 // DSMR lib include
 #include <dsmr.h>
 
-//#define DEBUG
+#define DEBUG
 
 void sendMQTTMessage(String topic, String message);
 
@@ -105,11 +105,13 @@ using MyData = ParsedData<
 //};
 
 // Update these with values suitable for your network.
-const char* ssid = "SSID";
-const char* password = "Password";
-const char* mqtt_server = "mqtt-server";
+const char* ssid = SSID_NAME;
+const char* password = SSID_PASS;
+const char* mqtt_server = "tinysrv";
 const char* mqtt_debug_topic = "debug/smartmeter/debug";
 const char* mqtt_topic_prefix = "home/smartmeter/";
+const char* wifi_hostname = "mqtt_smartmeter";
+
 
 struct Printer {
   template<typename Item>
@@ -147,6 +149,7 @@ void setup_wifi() {
     Serial1.println("Connecting to ");
     Serial1.println(ssid);
     WiFi.mode(WIFI_STA);  //station only, no accesspoint
+    WiFi.hostname(wifi_hostname);
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED) 
     {
@@ -222,10 +225,10 @@ void reconnect() {
 } //end reconnect()
 
 void sendMQTTMessage(String topic, String message) {
-    char msg[50];
+    char msg[250];
     char tpc[50];
     topic.toCharArray(tpc, 50);
-    message.toCharArray(msg,50);
+    message.toCharArray(msg,250);
     //Serial1.println(tpc);
     //Serial1.println(msg);
     //publish sensor data to MQTT broker
@@ -261,9 +264,9 @@ void loop() {
   reader.loop();
   ArduinoOTA.handle();
 
-  // Every minute, fire off a one-off reading
+  // Every minute, fire off a one-off reading --> 5seconds
   unsigned long now = millis();
-  if (now - last > 60000) {
+  if (now - last > 5000) {
     reader.enable(true);
     last = now;
     print_to_mqtt("fire off reading");
@@ -278,8 +281,10 @@ void loop() {
       // Parse succesful, print result
       data.applyEach(Printer());
     } else {
+      //try to print anyway ? <<<< TEST!
+      //data.applyEach(Printer());
       // Parser error, print error
-      Serial1.println(err);
+      print_to_mqtt(err);
     }
   }
 
